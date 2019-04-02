@@ -7,7 +7,11 @@ import math
 
 import paddle.fluid as fluid
 from paddle.fluid.initializer import NormalInitializer
-
+import paddle.fluid.layers as layers
+from bilm import elmo_encoder
+from bilm import emb
+#import bilm
+import ipdb
 
 def lex_net(args, word_dict_len, label_dict_len):
     """
@@ -67,18 +71,47 @@ def lex_net(args, word_dict_len, label_dict_len):
         """
         Configure the network
         """
+        #add elmo
+        #ipdb.set_trace()
+        #elmo_embedding = emb(word)
+        #layers.Print(word, message='input_seq', summarize=10)
+        #drnn = layers.DynamicRNN()
+        #with drnn.block():
+         #   elmo_embedding = drnn.step_input(elmo_embedding)
+          #  elmo_enc= elmo_encoder(elmo_embedding)
+           # drnn.output(elmo_enc)
+       # elmo_enc = drnn()
+        
         word_embedding = fluid.layers.embedding(
-            input=word,
-            size=[word_dict_len, word_emb_dim],
-            dtype='float32',
-            is_sparse=IS_SPARSE,
-            param_attr=fluid.ParamAttr(
-                learning_rate=emb_lr,
-                name="word_emb",
-                initializer=fluid.initializer.Uniform(
-                    low=-init_bound, high=init_bound)))
-
-        input_feature = word_embedding
+        input=word,
+        size=[word_dict_len, word_emb_dim],
+        dtype='float32',
+        is_sparse=IS_SPARSE,
+        param_attr=fluid.ParamAttr(
+             learning_rate=emb_lr,
+             name="word_emb",
+             initializer=fluid.initializer.Uniform(
+                 low=-init_bound, high=init_bound)))	
+        #layers.Print(word, message='word', summarize=-1)
+        #layers.Print(word_r, message='word_r', summarize=-1)
+        word_r=fluid.layers.sequence_reverse(word, name=None)
+        #layers.Print(word_r, message='word_r_1', summarize=-1)
+        elmo_embedding = emb(word)
+        elmo_embedding_r=emb(word_r)
+        #layers.Print(elmo_embedding, message='elmo_embedding', summarize=10)
+        #layers.Print(word, message='input_seq', summarize=10)
+        #drnn = layers.DynamicRNN()
+        #with drnn.block():
+        #elmo_embed = drnn.step_input(elmo_embedding)
+        #layers.Print(elmo_embed, message='elmo_enc', summarize=10)
+        elmo_enc= elmo_encoder(elmo_embedding,elmo_embedding_r)
+        #input_feature=layers.concat(input=[elmo_enc, word_embedding], axis=1)
+        #input_feature=elmo_enc
+         #input_feature=layers.concat#drnn.output(input_feature)
+        #input_feature = drnn()
+       # input_feature = word_embedding
+        #layers.Print(elmo_enc, message='elmo_enc', summarize=10)
+        input_feature=layers.concat(input=[elmo_enc, word_embedding], axis=1)
         for i in range(bigru_num):
             bigru_output = _bigru_layer(input_feature)
             input_feature = bigru_output
@@ -105,9 +138,11 @@ def lex_net(args, word_dict_len, label_dict_len):
 
     word = fluid.layers.data(
         name='word', shape=[1], dtype='int64', lod_level=1)
+    #word_r = fluid.layers.data(
+    #    name='word_r', shape=[1], dtype='int64', lod_level=1)
     target = fluid.layers.data(
         name="target", shape=[1], dtype='int64', lod_level=1)
 
     avg_cost, crf_decode= _net_conf(word, target)
 
-    return avg_cost, crf_decode, word, target
+    return avg_cost, crf_decode, word,target

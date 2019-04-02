@@ -24,12 +24,12 @@ def parse_args():
     parser.add_argument(
         "--traindata_dir",
         type=str,
-        default="./data/train_data",
+        default="./data/",
         help="The folder where the training data is located.")
     parser.add_argument(
         "--testdata_dir",
         type=str,
-        default="./data/test_data",
+        default="./data/dev",
         help="The folder where the training data is located.")
     parser.add_argument(
         "--model_save_dir",
@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument(
         "--save_model_per_batchs",
         type=int,
-        default=10000,
+        default=1000,
         help="Save the model once per xxxx batch of training")
     parser.add_argument(
         "--eval_window",
@@ -50,7 +50,7 @@ def parse_args():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=100,
+        default=32,
         help="The number of sequences contained in a mini-batch, or the maximum" \
              "number of tokens (include paddings) contained in a mini-batch.")
     parser.add_argument(
@@ -112,13 +112,13 @@ def parse_args():
     parser.add_argument(
         "--word_dict_path",
         type=str,
-        default="./conf/word.dic",
+        default="./data/word.dic",
         help="The path of the word dictionary."
     )
     parser.add_argument(
         "--label_dict_path",
         type=str,
-        default="./conf/tag.dic",
+        default="./data/tag.dic",
         help="The path of the label dictionary."
     )
     parser.add_argument(
@@ -130,7 +130,7 @@ def parse_args():
     parser.add_argument(
         "--num_iterations",
         type=int,
-        default=0,
+        default=40000,
         help="The maximum number of iterations. If set to 0 (default), do not limit the number."
     )
     args = parser.parse_args()
@@ -171,13 +171,24 @@ def test(exe, chunk_evaluator, save_dirname, test_data, place):
     """
     Test the network in training.
     """
+    #import ipdb;ipdb.set_trace()
     inference_scope = fluid.core.Scope()
     with fluid.scope_guard(inference_scope):
         [inference_program, feed_target_names, fetch_targets] = fluid.io.load_inference_model(save_dirname, exe)
         chunk_evaluator.reset()
         for data in test_data():
             word = to_lodtensor(list(map(lambda x: x[0], data)), place)
+            #import ipdb;ipdb.set_trace()
+            #word_r = to_lodtensor(list(map(lambda x: x[0].reverse(), data)), place)
+            #word_r_lod=[]
+            #for data1 in data:
+              # data1[0].reverse() 
+             #  word_r_lod.append(data1[0])
+            #import ipdb;ipdb.set_trace()
+            #word_r = to_lodtensor(word_r_lod,place) 
             target = to_lodtensor(list(map(lambda x: x[1], data)), place)
+            #import ipdb 
+            #ipdb.set_trace()
             result_list = exe.run(
                 inference_program,
                 feed={
@@ -192,6 +203,13 @@ def test(exe, chunk_evaluator, save_dirname, test_data, place):
                                int(number_correct[0]))
     return chunk_evaluator.eval()
 
+def if_exist(var):
+    path = os.path.join(src_pretrain_model_path, var.name)
+    exist = os.path.exists(path)
+    if exist:
+        print('Load model: %s' % path)
+    return exist
+src_pretrain_model_path='../data/490001'
 
 def train(args):
     """
@@ -206,9 +224,9 @@ def train(args):
     word_dict_len = max(map(int, word2id_dict.values())) + 1                
     label_dict_len = max(map(int, label2id_dict.values())) + 1 
     
-    avg_cost, crf_decode, word, target= lex_net(args, word_dict_len, label_dict_len)
-    sgd_optimizer = fluid.optimizer.SGD(learning_rate=args.base_learning_rate)
-    sgd_optimizer.minimize(avg_cost)
+    avg_cost, crf_decode, word,target= lex_net(args, word_dict_len, label_dict_len)
+    adam_optimizer = fluid.optimizer.Adam(learning_rate=args.base_learning_rate)
+    adam_optimizer.minimize(avg_cost)
 
     (precision, recall, f1_score, num_infer_chunks, num_label_chunks,
      num_correct_chunks) = fluid.layers.chunk_eval(
@@ -244,6 +262,8 @@ def train(args):
     feeder = fluid.DataFeeder(feed_list=[word, target], place=place)
     exe = fluid.Executor(place)
     exe.run(fluid.default_startup_program())
+    src_pretrain_model_path='../data/490001'
+    fluid.io.load_vars(executor=exe, dirname=src_pretrain_model_path, predicate=if_exist, main_program=fluid.default_main_program()) 
     batch_id = 0
     start_time = time.time()
     eval_list = []
@@ -279,8 +299,8 @@ def train(args):
             save_exe = fluid.Executor(place)
             save_dirname = os.path.join(args.model_save_dir,
                                         "params_batch_%d" % batch_id)
-            fluid.io.save_inference_model(save_dirname, ['word'], [crf_decode],
-                                          save_exe)
+            #fluid.io.save_inference_model(save_dirname, ['word'], [crf_decode],
+             #                             save_exe)
             temp_save_model = os.path.join(args.model_save_dir, "temp_model_for_test")
             fluid.io.save_inference_model(temp_save_model, ['word', 'target'], [num_infer_chunks, num_label_chunks, num_correct_chunks], save_exe)
 
